@@ -22,23 +22,24 @@ def path_keyword(path):
 def sorting_image_data(path):
     return path.split('track_background/')[1].split('.')[0]
 
-def distance_to_constant_function(points, c): #point -> 좌표, c = 상수함수 좌표
-    max_distance = float('inf') #최대값인 inf로 초기화
-    nearest_point = None #변수 생성
-
-    for x, y in points: #좌표 x,y추출
-        # 상수 함수와의 거리 계산
-        distance_to_constant = abs(c - y) # 상수함수와 y좌표의 거리
-
-        # 최소 거리를 가지는 좌표 업데이트
-        if distance_to_constant < max_distance:
-            max_distance = distance_to_constant
-            nearest_point = (x, y)
-
-    return nearest_point
+#횡단보도랑 가장 가까운 축
+def area_speed(area, point):
+    point_ = abs(point - area)
+    
+    return point_
 
 def point_to_tuple(p):
     return (p.x, p.y)
+
+def remove_outliers(data):
+    Q1 = np.percentile(data, 25)  # 1사분위수
+    Q3 = np.percentile(data, 75)  # 3사분위수
+    IQR = Q3 - Q1  # IQR 계산
+    lower_bound = Q1 - 1.5 * IQR  # 이상치 하한값
+    upper_bound = Q3 + 1.5 * IQR  # 이상치 상한값
+    
+    # 이상치 제거 후 데이터 반환
+    return [x for x in data if lower_bound <= x <= upper_bound]
 
 #%% 추가 데이터 생성
 # spot_features = pd.DataFrame({'place':       ['spot_A',    'spot_B',     'spot_C',   'spot_D',   'spot_E',   'spot_F',    'spot_G',   'spot_H',    'spot_I'],
@@ -81,10 +82,17 @@ spot_features = pd.DataFrame({'place':       ['spot_A',    'spot_I'],
                               'walk_right_4': [(1610,970), (1907,667)],
                               })
 
-
-spot_distance_onlycar = {'A':0, 'I':0}
-spot_distance_crosswalk = {'A':0, 'I':0}
-spot_distance_walk = {'A':0, 'I':0}
+only_car_total_list_A = []
+crosswalk_total_list_A = []
+walk_total_list_A = []
+only_car_total_list_I = []
+crosswalk_total_list_I = []
+walk_total_list_I = []
+spot_distance_onlycar = {'A':0, 'B':0}
+spot_distance_crosswalk = {'A':0, 'B':0}
+spot_distance_walk = {'A':0, 'B':0}
+A_area = [680.5,1361,2041.5,2722,2944]
+I_area = [629.5,1259,1888.5,2518,2939]
 
 
 #%% DATA
@@ -143,7 +151,6 @@ for path in data_path:
     #     spot_H_data.append(path)
     if character == 'I':
         spot_I_data.append(path)
-
 spot_data = [spot_A_data, spot_I_data]
 # spot_data = [spot_A_data, spot_B_data, spot_C_data, spot_D_data, spot_E_data, spot_F_data, spot_G_data, spot_H_data, spot_I_data]
 
@@ -163,6 +170,14 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
     distance = 0
     crosswalk_distance = 0
     walk_distance = 0 
+    only_car_total_list = []
+    crosswalk_total_list = []
+    walk_total_list = []
+    area_1 = []
+    area_2 = []
+    area_3 = []
+    area_4 = []
+    area_5 = []
     
     if "A" in _path[0]:
         image_path_one = 'project/A_I_background/spot_A.jpg'
@@ -235,7 +250,8 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
         # ID / class_number unique
         unique_ids = data["id"].unique()
         unique_class = data["class_number"].unique()
-        unique_frame = data["frame"].unique()        
+        unique_frame = data["frame"].unique()      
+
 #%% #####직사각형 출력 -> 사용 X
 # for class_num in unique_class:
 #         class_data_person = filtered_data[filtered_data["class_number"] == 0]
@@ -338,6 +354,7 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
                                 (only_car['topview_point'][i][1] - only_car['topview_point'][i-1][1])**2)
                 dist = dist/abs(only_car['frame'][i] - only_car['frame'][i-1])
                 distance_list.append(dist)
+                only_car_total_list.append(dist)
         only_car = only_car.assign(distance = distance_list)
         each_mean = only_car['distance'].mean()
         
@@ -360,6 +377,7 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
         crosswalk_point = []
         crosswalk_append = []
         crosswalk_df = pd.DataFrame()
+
         for i in range(6,10):        
             crosswalk_p = cv2.perspectiveTransform(np.array([[np.array((spot_feat[i]), dtype = 'float32'), ]]), M)
             crosswalk_p = (int(crosswalk_p[0][0][0]), int(crosswalk_p[0][0][1]))
@@ -381,7 +399,7 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
         crosswalk_df = pd.DataFrame(crosswalk_append)
         crosswalk_df = crosswalk_df.sort_values(['id','frame'])
         crosswalk_df.drop_duplicates(subset=None, keep='first', inplace=True, ignore_index=True)
-
+        unique_crosswalk_ids = crosswalk_df["id"].unique()
 
         
         crosswalk_id = []
@@ -395,11 +413,106 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
                                 (crosswalk_df['topview_point'][i][1] - crosswalk_df['topview_point'][i-1][1])**2)
                 dist = dist/abs(crosswalk_df['frame'][i] - crosswalk_df['frame'][i-1])
                 crosswalk_distance_list.append(dist)
+                crosswalk_total_list.append(dist)
         crosswalk_df = crosswalk_df.assign(crosswalk_distance = crosswalk_distance_list)
         each_mean = crosswalk_df['crosswalk_distance'].mean()
         
         crosswalk_distance = crosswalk_distance + each_mean
+        
+#%% 특정 지정 구역
+        for i in unique_crosswalk_ids:
+            if now_spot == "A":
+                dot1_list = []
+                dot2_list = []
+                dot3_list = []
+                dot4_list = []
+                dot5_list = []
+                filtered_data = crosswalk_df[crosswalk_df['id'] == i]
+                filtered_data = filtered_data.sort_values(['id', 'frame'])
+                for j in range(len(filtered_data)):     
+                    dot1 = area_speed(680.5,filtered_data.iloc[j][8][1])
+                    dot1_list.append(dot1)
+                filtered_data['dot1'] = dot1_list #crosswalk_df.update(filtered_data) 
+                area1 = filtered_data['crosswalk_distance'][filtered_data['dot1'].idxmin()]
+                    
+                for j in range(len(filtered_data)):                  
+                    dot2 = area_speed(1361,filtered_data.iloc[j][8][1])                    
+                    dot2_list.append(dot2)
+                filtered_data['dot2'] = dot2_list
+                area2 = filtered_data['crosswalk_distance'][filtered_data['dot2'].idxmin()]
+                    
+                for j in range(len(filtered_data)):                     
+                    dot3 = area_speed(2041.5,filtered_data.iloc[j][8][1])                    
+                    dot3_list.append(dot3)
+                filtered_data['dot3'] = dot3_list
+                area3 = filtered_data['crosswalk_distance'][filtered_data['dot3'].idxmin()]
+                    
+                for j in range(len(filtered_data)):                      
+                    dot4 = area_speed(2722,filtered_data.iloc[j][8][1])                    
+                    dot4_list.append(dot4)
+                filtered_data['dot4'] = dot4_list
+                area4 = filtered_data['crosswalk_distance'][filtered_data['dot4'].idxmin()]
+                                
+                for j in range(len(filtered_data)): 
+                    dot5 = area_speed(2944,filtered_data.iloc[j][8][1])                    
+                    dot5_list.append(dot5)
+                filtered_data['dot5'] = dot5_list
+                area5 = filtered_data['crosswalk_distance'][filtered_data['dot3'].idxmin()]
+                    
 
+                
+                area_1.append(area1)
+                area_2.append(area2)
+                area_3.append(area3)
+                area_4.append(area4)
+                area_5.append(area5)
+                
+            if now_spot == "I":                
+                dot1_list = []
+                dot2_list = []
+                dot3_list = []
+                dot4_list = []
+                dot5_list = [] 
+
+                filtered_data = filtered_data.sort_values(['id', 'frame'])
+                filtered_data = crosswalk_df[crosswalk_df['id'] == i]
+                for j in range(len(filtered_data)):
+                    dot1 = area_speed(629.5,filtered_data.iloc[j][8][1])
+                    dot1_list.append(dot1)
+                filtered_data['dot1'] = dot1_list
+                area1 = filtered_data['crosswalk_distance'][filtered_data['dot1'].idxmin()]
+                    
+                for j in range(len(filtered_data)):
+                    dot2 = area_speed(1259,filtered_data.iloc[j][8][1])                    
+                    dot2_list.append(dot2)
+                filtered_data['dot2'] = dot2_list
+                area2 = filtered_data['crosswalk_distance'][filtered_data['dot2'].idxmin()]
+                    
+                for j in range(len(filtered_data)):
+                    dot3 = area_speed(1888.5,filtered_data.iloc[j][8][1])                    
+                    dot3_list.append(dot3)
+                filtered_data['dot3'] = dot3_list
+                area3 = filtered_data['crosswalk_distance'][filtered_data['dot3'].idxmin()]
+                    
+                for j in range(len(filtered_data)):
+                    dot4 = area_speed(2518,filtered_data.iloc[j][8][1])                    
+                    dot4_list.append(dot4)
+                filtered_data['dot4'] = dot4_list
+                area4 = filtered_data['crosswalk_distance'][filtered_data['dot4'].idxmin()]
+                    
+                for j in range(len(filtered_data)):                    
+                    dot5 = area_speed(2939,filtered_data.iloc[j][8][1])                    
+                    dot5_list.append(dot5)
+                filtered_data['dot5'] = dot5_list
+                area5 = filtered_data['crosswalk_distance'][filtered_data['dot5'].idxmin()]
+                
+                area_1.append(area1)
+                area_2.append(area2)
+                area_3.append(area3)
+                area_4.append(area4)
+                area_5.append(area5)
+               
+            del filtered_data  
         del car_data
         del crosswalk_point
         del crosswalk_person_frame
@@ -478,6 +591,7 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
                                     (walk_df['topview_point'][i][1] - walk_df['topview_point'][i-1][1])**2)
                     dist_ = dist_/abs(walk_df['frame'][i] - walk_df['frame'][i-1])
                     walk_distance_list.append(dist_)
+                    walk_total_list.append(dist_)
             walk_df = walk_df.assign(walk_distance = walk_distance_list)
             each_mean = walk_df['walk_distance'].mean()
             
@@ -509,6 +623,12 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
         distance_mean_A = distance / len(_path)
         crosswalk_distance_mean_A = crosswalk_distance / len(_path)
         walk_distance_mean_A = walk_distance / len(_path)
+        only_car_total_list_A = only_car_total_list
+        crosswalk_total_list_A = crosswalk_total_list
+        walk_total_list_A = walk_total_list
+        only_car_total_list_I = []
+        crosswalk_total_list_I = []
+        walk_total_list_I = []
     # if now_spot == "B":
     #     distance_mean_B = distance / len(_path)
     #     crosswalk_distance_mean_B = crosswalk_distance / len(_path)
@@ -541,13 +661,77 @@ for _path in spot_data:  #하나의 SPOT 끝날 때까지 반복
         distance_mean_I = distance / len(_path)
         crosswalk_distance_mean_I = crosswalk_distance / len(_path)
         walk_distance_mean_I = walk_distance / len(_path)
+        only_car_total_list_I = only_car_total_list
+        crosswalk_total_list_I = crosswalk_total_list
+        walk_total_list_I = walk_total_list
+        
+    del only_car_total_list 
+    del crosswalk_total_list
+    del walk_total_list  
+        # 함수 찍어봐야겠다.
+    if now_spot == "A": 
+        no_outlier_area_1 = remove_outliers(area_1)
+        no_outlier_area_2 = remove_outliers(area_2)
+        no_outlier_area_3 = remove_outliers(area_3)
+        no_outlier_area_4 = remove_outliers(area_4)
+        no_outlier_area_5 = remove_outliers(area_5)
+        
+        mean1 = np.mean(no_outlier_area_1) 
+        mean2 = np.mean(no_outlier_area_2) 
+        mean3 = np.mean(no_outlier_area_3)
+        mean4 = np.mean(no_outlier_area_4) 
+        mean5 = np.mean(no_outlier_area_5) 
+        mean1_shifted = (A_area[0],mean1)
+        mean2_shifted = (A_area[1],mean2)
+        mean3_shifted = (A_area[2],mean3)
+        mean4_shifted = (A_area[3],mean4)
+        mean5_shifted = (A_area[4],mean5)
+ 
+        plt.scatter(*mean1_shifted, color='black', label='List 1')
+        plt.scatter(*mean2_shifted, color='black', label='List 2')
+        plt.scatter(*mean3_shifted, color='black', label='List 3')
+        plt.scatter(*mean4_shifted, color='black', label='List 4')
+        plt.scatter(*mean5_shifted, color='black', label='List 5')
+        plt.title("SPOT A")
+
+                
+    if now_spot == "I":
+        no_outlier_area_1 = remove_outliers(area_1)
+        no_outlier_area_2 = remove_outliers(area_2)
+        no_outlier_area_3 = remove_outliers(area_3)
+        no_outlier_area_4 = remove_outliers(area_4)
+        no_outlier_area_5 = remove_outliers(area_5)
+        
+        mean1 = np.mean(no_outlier_area_1) 
+        mean2 = np.mean(no_outlier_area_2) 
+        mean3 = np.mean(no_outlier_area_3)
+        mean4 = np.mean(no_outlier_area_4) 
+        mean5 = np.mean(no_outlier_area_5) 
+        mean1_shifted = (I_area[0],mean1)
+        mean2_shifted = (I_area[1],mean2)
+        mean3_shifted = (I_area[2],mean3)
+        mean4_shifted = (I_area[3],mean4)
+        mean5_shifted = (I_area[4],mean5)
+        
+        # plt.xlim(-4,1)
+        plt.scatter(*mean1_shifted, color='black', label='List 1')
+        plt.scatter(*mean2_shifted, color='black', label='List 2')
+        plt.scatter(*mean3_shifted, color='black', label='List 3')
+        plt.scatter(*mean4_shifted, color='black', label='List 4')
+        plt.scatter(*mean5_shifted, color='black', label='List 5')
+        plt.title("SPOT B")
+ 
+    
+
+
+
 
 
 
 #%% 차량만 있을 때 spot별 차량 속도 text 파일에 저장  
-spot_distance_onlycar = {'A': distance_mean_A, 'I': distance_mean_I}
-spot_distance_crosswalk = {'A': crosswalk_distance_mean_A, 'I': crosswalk_distance_mean_I}
-spot_distance_walk = {'A': walk_distance_mean_A, 'I': walk_distance_mean_I}
+spot_distance_onlycar = {'A': distance_mean_A, 'B': distance_mean_I}
+spot_distance_crosswalk = {'A': crosswalk_distance_mean_A, 'B': crosswalk_distance_mean_I}
+spot_distance_walk = {'A': walk_distance_mean_A, 'B': walk_distance_mean_I}
 # spot_distance_onlycar = {'A': distance_mean_A, 'B': distance_mean_B, 'C': distance_mean_C, 'D': distance_mean_D, 'E': distance_mean_E, 'F': distance_mean_F, 'G': distance_mean_G, 'H': distance_mean_H, 'I': distance_mean_I}
 # spot_distance_crosswalk = {'A': crosswalk_distance_mean_A, 'B': crosswalk_distance_mean_B, 'C': crosswalk_distance_mean_C, 'D': crosswalk_distance_mean_D, 'E': crosswalk_distance_mean_E, 'F': crosswalk_distance_mean_F, 'G': crosswalk_distance_mean_G, 'H': crosswalk_distance_mean_H, 'I': crosswalk_distance_mean_I}
 # spot_distance_walk = {'A': walk_distance_mean_A, 'B': walk_distance_mean_B, 'C': walk_distance_mean_C, 'D': walk_distance_mean_D, 'E': walk_distance_mean_E, 'F': walk_distance_mean_F, 'G': walk_distance_mean_G, 'H': walk_distance_mean_H, 'I': walk_distance_mean_I}
@@ -575,37 +759,93 @@ with open(file_path, 'w') as file:
 
 # ##########################################################################
 #%% only_car
-categories = list(spot_distance_onlycar.keys())
-values = list(spot_distance_onlycar.values())
+# categories = list(spot_distance_onlycar.keys())
+# values = list(spot_distance_onlycar.values())
 
-# 그래프 그리기
-plt.bar(categories, values)
-plt.xlabel('SPOT')
-plt.ylabel('PIXEL DISTANCE PER FRAME')
-plt.title('only_car')
-plt.grid(True)
-plt.show()
+# # 그래프 그리기
+# plt.bar(categories, values)
+# plt.xlabel('SPOT')
+# plt.ylabel('PIXEL DISTANCE PER FRAME')
+# plt.title('only_car')
+# plt.grid(True)
+# plt.show()
 
-#%% crosswalk
-categories = list(spot_distance_crosswalk.keys())
-values = list(spot_distance_crosswalk.values())
+# #%% crosswalk
+# categories = list(spot_distance_crosswalk.keys())
+# values = list(spot_distance_crosswalk.values())
 
-# 그래프 그리기
-plt.bar(categories, values)
-plt.xlabel('SPOT')
-plt.ylabel('PIXEL DISTANCE PER FRAME')
-plt.title('crosswalk')
-plt.grid(True)
-plt.show()
+# # 그래프 그리기
+# plt.bar(categories, values)
+# plt.xlabel('SPOT')
+# plt.ylabel('PIXEL DISTANCE PER FRAME')
+# plt.title('crosswalk')
+# plt.grid(True)
+# plt.show()
 
 #%% walk
-categories = list(spot_distance_walk.keys())
-values = list(spot_distance_walk.values())
+# categories = list(spot_distance_walk.keys())
+# values = list(spot_distance_walk.values())
 
-# 그래프 그리기
-plt.bar(categories, values)
-plt.xlabel('SPOT')
-plt.ylabel('PIXEL DISTANCE PER FRAME')
-plt.title('walk')
+# # 그래프 그리기
+# plt.bar(categories, values)
+# plt.xlabel('SPOT')
+# plt.ylabel('PIXEL DISTANCE PER FRAME')
+# plt.title('sidewalk')
+# plt.grid(True)
+# plt.show()    
+
+
+#%% 박스플롯 (이상치 제거한 채)
+no_outlier_only_car_total_list_A = remove_outliers(only_car_total_list_A)
+no_outlier_only_car_total_list_I = remove_outliers(only_car_total_list_I)
+
+no_outlier_crosswalk_total_list_A = remove_outliers(crosswalk_total_list_A)
+no_outlier_crosswalk_total_list_I = remove_outliers(crosswalk_total_list_I)
+
+no_outlier_walk_total_list_A = remove_outliers(walk_total_list_A)
+no_outlier_walk_total_list_I = remove_outliers(walk_total_list_I)
+
+
+plt.boxplot([no_outlier_only_car_total_list_A, no_outlier_only_car_total_list_I], showfliers=False, showmeans=True, meanline=True, medianprops={'visible': False})
+plt.xticks([1, 2], ['A', 'B'])  # X 축 레이블 설정
+plt.ylabel('Pixel Distance Per Frame')
+plt.title('ONLY CAR DATA')
+plt.grid(True)
+plt.show()
+print("ONLY CAR MEAN \"A\" Spot : {}".format(sum(only_car_total_list_A)/len(only_car_total_list_A)))
+print("ONLY CAR MEAN \"B\" Spot : {}".format(sum(only_car_total_list_I)/len(only_car_total_list_I)))
+
+
+plt.boxplot([no_outlier_crosswalk_total_list_A, no_outlier_crosswalk_total_list_I], showfliers=False, showmeans=True, meanline=True, medianprops={'visible': False})
+plt.xticks([1, 2], ['A', 'B'])  # X 축 레이블 설정
+plt.ylabel('Pixel Distance Per Frame')
+plt.title('CROSSWALK DATA')
+plt.grid(True)
+plt.show()
+print("CROSSWALK CAR MEAN \"A\" Spot : {}".format(sum(crosswalk_total_list_A)/len(crosswalk_total_list_A)))
+print("CROSSWALK CAR MEAN \"B\" Spot : {}".format(sum(crosswalk_total_list_I)/len(crosswalk_total_list_I)))
+
+
+plt.boxplot([no_outlier_walk_total_list_A, no_outlier_walk_total_list_I], showfliers=False, showmeans=True, meanline=True, medianprops={'visible': False})
+plt.xticks([1, 2], ['A', 'B'])  # X 축 레이블 설정
+plt.ylabel('Pixel Distance Per Frame')
+plt.title('SIDEWALK DATA')
+plt.grid(True)
+plt.show()
+print("WALK CAR MEAN \"A\" Spot : {}".format(sum(walk_total_list_A)/len(walk_total_list_A)))
+print("WALK CAR MEAN \"B\" Spot : {}".format(sum(walk_total_list_I)/len(walk_total_list_I)))
+
+#%% A구간만, I구간만
+plt.boxplot([only_car_total_list_A, crosswalk_total_list_A, walk_total_list_A], showfliers=False, showmeans=True, meanline=True, medianprops={'visible': False})
+plt.xticks([1, 2, 3], ['ONLY CAR', 'CROSSWALK', 'WALK'])  # X 축 레이블 설정
+plt.ylabel('Pixel Distance Per Frame')
+plt.title('SPOT A')
+plt.grid(True)
+plt.show()
+
+plt.boxplot([only_car_total_list_I, crosswalk_total_list_I, walk_total_list_I], showfliers=False, showmeans=True, meanline=True, medianprops={'visible': False})
+plt.xticks([1, 2, 3], ['ONLY CAR', 'CROSSWALK', 'WALK'])  # X 축 레이블 설정
+plt.ylabel('Pixel Distance Per Frame')
+plt.title('SPOT B')
 plt.grid(True)
 plt.show()
